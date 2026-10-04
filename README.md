@@ -1,3 +1,6 @@
+> **Unofficial maintenance fork:** pinned to upstream v2.0.19; own version
+> **v2.0.19-ricky.1**. See [fork scope, builds and maintenance](fork/README.md).
+
 <p align="center">
   <a href="https://opencode.ai">
     <picture>
