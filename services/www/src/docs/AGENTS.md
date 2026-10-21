@@ -23,5 +23,5 @@
 
 ## Validation
 
-- Run `bun typecheck` and `bun run build` from `services/www` after changes.
+- 文档网站内容或实现变化时，从 `services/www` 运行 `bun typecheck` 和 `bun run build`，并遵守上级的活动 dev server 缓存冲突限制。仅 AGENTS 指引文档变化时做内容/引用审阅及 `git diff --check`，不默认构建网站。
 - Check desktop and mobile layouts when changing navigation or shared styles.

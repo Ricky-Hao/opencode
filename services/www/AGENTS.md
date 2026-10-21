@@ -11,9 +11,9 @@
 ## Local development
 
 - Run `bun dev` from this package and use the local URL printed by Astro.
-- Do not run `bun typecheck`, `bun run build`, or another Astro process while the dev server is running. They share the Vite dependency cache and can break the active dev server. Leave validation to the user when the dev server is active.
+- Do not run `bun typecheck`, `bun run build`, or another Astro process while the dev server is running. They share the Vite dependency cache and can break the active dev server. 保留现有服务；先完成不冲突的检查，说明受阻项，仅在取得相应停止授权后安排受影响验证，不自动停止服务。
 
 ## Validation
 
-- Run `bun typecheck`, `bun run check:generated`, and `bun run build` from this package after changes.
+- 网站实现、内容、路由或生成接口变化时，从本包运行 `bun typecheck`、`bun run check:generated` 和 `bun run build`。仅维护 AGENTS 指引时做内容/引用审阅及 `git diff --check`，不默认启动 Astro 或跑网站构建。
 - Treat validation and build errors as blockers.

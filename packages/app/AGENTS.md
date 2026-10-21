@@ -45,13 +45,13 @@
 
 ## Tool Calling
 
-- ALWAYS USE PARALLEL TOOLS WHEN APPLICABLE.
+- 仅在动作独立且互不干扰时并行工具。依赖步骤先取得真实结果，再执行后续动作；审阅和写入不并行。
 
 ## Browser Automation
 
-Use `agent-browser` for web automation. Run `agent-browser --help` for all commands.
+按当前环境的授权和已提供入口选择浏览器工具，不为简单验证另建框架或强制安装 CLI。仅在实际需要的测试点操作浏览器；共享登录状态不增加提交或外发授权。
 
-Core workflow:
+若当前任务已选用 `agent-browser`，先读 `agent-browser --help`。其流程为：
 
 1. `agent-browser open <url>` - Navigate to page
 2. `agent-browser snapshot -i` - Get interactive elements with refs (@e1, @e2)
