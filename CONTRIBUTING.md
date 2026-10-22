@@ -81,7 +81,7 @@ Bug fixes, chores, and tests must reference an existing issue. Documentation, re
 
 Before implementing new functionality, open a feature request describing the problem, why it belongs in OpenCode, and your proposed approach if you have one. Wait for design approval before opening the implementation PR.
 
-Base branches on `v2`, not `dev`, and complete the provided pull request template.
+本 fork 的维护变更提交到 `ricky-opencode2`。向上游贡献时，基于 `dev` 并填写上游 pull request 模板。
 
 ### Keep It Focused
 

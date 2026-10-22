@@ -51,7 +51,7 @@ def main():
     env = {'HOME': str(out / 'home'), 'TMPDIR': str(out / 'tmp'),
            'XDG_CACHE_HOME': str(out / 'cache'), 'BUN_INSTALL_CACHE_DIR': str(out / 'cache/bun'),
            'PATH': f'{bun.parent}:{node.parent}:/usr/bin:/bin', 'LANG': 'C.UTF-8', 'CI': '1',
-           'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null',
+           'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_NO_LAZY_FETCH': '1',
            'OPENCODE_VERSION': SPEC['version'], 'OPENCODE_CHANNEL': 'ricky'}
 
     def run(argv, cwd=ROOT, capture=False):
@@ -63,7 +63,7 @@ def main():
     run([bun, 'install', '--filter', '@opencode/cli', '--frozen-lockfile', '--ignore-scripts'])
     assert sha(ROOT / 'bun.lock') == SPEC['lock_sha256']
     cli = ROOT / 'packages/cli'
-    run([bun, 'test', './test/acp/network-readiness.test.ts'], cwd=cli)
+    run([bun, 'test', '--timeout', '30000', './test/acp'], cwd=cli)
     run([bun, 'run', 'script/build.ts', '--target=' + SPEC['target'],
          '--skip-install', '--skip-web-ui', '--outdir=' + str(out / 'compiled')], cwd=cli)
     binary = out / 'compiled/cli-linux-x64-baseline/bin/opencode'

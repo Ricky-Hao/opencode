@@ -1,88 +1,154 @@
-// Runs inside the pinned upstream tree; stub clients, no sockets, keys, prompts or MCP calls.
-import { beforeEach, afterEach, expect, test } from "bun:test"
-import { ACPService } from "../../src/acp/service"
+import { expect } from "bun:test"
+import { OpenCode } from "@opencode/client/effect"
+import { OpenCodeEvent } from "@opencode/protocol/groups/event"
+import { Agent } from "@opencode/schema/agent"
+import { Model } from "@opencode/schema/model"
+import { Provider } from "@opencode/schema/provider"
+import { ConfigProvider, Deferred, Effect, Fiber, Schema, Stream } from "effect"
+import { HttpClient, HttpClientResponse } from "effect/http"
+import { TestClock } from "effect/testing"
+import { it } from "../../../core/test/lib/effect"
+import { ACPCatalog } from "../../src/acp/catalog"
 
-const keys = ["OPENCODE_ACP_REQUIRED_MODEL", "OPENCODE_ACP_REQUIRED_VARIANT", "OPENCODE_ACP_CATALOG_TIMEOUT_MS"]
-let saved: (string | undefined)[]
-beforeEach(() => {
-  saved = keys.map((key) => process.env[key])
-  process.env.OPENCODE_ACP_REQUIRED_MODEL = "test/wanted"
-  process.env.OPENCODE_ACP_REQUIRED_VARIANT = "medium"
-  process.env.OPENCODE_ACP_CATALOG_TIMEOUT_MS = "150"
-})
-afterEach(() => keys.forEach((key, i) => {
-  if (saved[i] === undefined) delete process.env[key]
-  else process.env[key] = saved[i]
-}))
-const wanted = { providerID: "test", id: "wanted", name: "Wanted", enabled: true, variants: [{ id: "medium" }] }
-const builtin = { ...wanted, providerID: "builtin", id: "early" }
-const done = new Error("synthetic session boundary")
-function fixture(mode = "ready") {
-  const state = { mode, calls: 0, signals: [] as AbortSignal[], created: [] as any[] }
-  const read = (kind: string) => async (_: any, options: any) => {
-    expect(options.signal).toBeInstanceOf(AbortSignal)
-    state.signals.push(options.signal)
-    if (state.mode === "hang") return new Promise(() => {}) // Deliberately ignores abort.
-    if (kind === "model") {
-      state.calls++
-      return { data: state.mode === "missing" || (state.mode === "late" && state.calls < 3) ? [builtin] : [builtin, wanted] }
-    }
-    if (kind === "default") return { data: builtin }
-    return { data: kind === "agent" ? [{ id: "build", mode: "primary", hidden: false }] : [] }
-  }
-  const client = { model: { list: read("model"), default: read("default") },
-    agent: { list: read("agent") }, command: { list: read("command") },
-    session: { create: async (value: any) => { state.created.push(value); throw done } } }
-  const service = ACPService.make({ client, connection: {} } as any)
-  const request = () => service.newSession({ cwd: "/synthetic-readiness", mcpServers: [] })
-  return { state, request }
+const wanted = {
+  ...Model.Info.default(Provider.ID.make("test"), Model.ID.make("wanted")),
+  variants: [{ id: Model.VariantID.make("medium") }],
+}
+const builtin = Model.Info.default(Provider.ID.make("builtin"), Model.ID.make("early"))
+const connected = Schema.decodeUnknownSync(OpenCodeEvent)({ id: "evt_connected", type: "server.connected", data: {} })
+const cwd = "/synthetic-readiness"
+const settings = {
+  OPENCODE_ACP_REQUIRED_MODEL: "test/wanted",
+  OPENCODE_ACP_REQUIRED_VARIANT: "medium",
+  OPENCODE_ACP_CATALOG_TIMEOUT_MS: "150",
+}
+const expectedModel = {
+  providerID: Provider.ID.make("test"),
+  id: Model.ID.make("wanted"),
+  variant: Model.VariantID.make("medium"),
 }
 
-test("waits past builtin catalog, selects explicit target and medium, caches only readiness", async () => {
-  const { state, request } = fixture("late")
-  await expect(request()).rejects.toBe(done)
-  expect(state.calls).toBe(3)
-  expect(state.created[0].model).toEqual({ providerID: "test", id: "wanted", variant: "medium" })
-  await expect(request()).rejects.toBe(done)
-  expect(state.calls).toBe(3)
-  expect(state.signals.every((signal) => signal.aborted)).toBe(true)
-})
-
-test("missing target fails bounded without fallback; same-cwd failure is evicted", async () => {
-  const { state, request } = fixture("missing")
-  const start = performance.now()
-  await expect(request()).rejects.toMatchObject({ safeMessage: "ACP catalog readiness deadline exceeded" })
-  expect(performance.now() - start).toBeGreaterThanOrEqual(120)
-  expect(performance.now() - start).toBeLessThan(1500)
-  expect(state.created).toHaveLength(0)
-  state.mode = "ready"
-  await expect(request()).rejects.toBe(done)
-  expect(state.created).toHaveLength(1)
-})
-
-test("all four hanging reads receive abort and caller remains bounded even if ignored", async () => {
-  const { state, request } = fixture("hang")
-  const start = performance.now()
-  await expect(request()).rejects.toMatchObject({ safeMessage: "ACP catalog readiness deadline exceeded" })
-  expect(performance.now() - start).toBeLessThan(1500)
-  expect(state.signals).toHaveLength(4)
-  expect(state.signals.every((signal) => signal.aborted)).toBe(true)
-  expect(state.created).toHaveLength(0)
-})
-
-test("invalid deadline, absent target and unavailable variant fail closed", async () => {
-  for (const value of ["0", "NaN", "1.5", "120001"]) {
-    process.env.OPENCODE_ACP_CATALOG_TIMEOUT_MS = value
-    const { state, request } = fixture()
-    await expect(request()).rejects.toThrow("deadline")
-    expect(state.calls).toBe(0)
+// 仅替换 HTTP 边界。实际 client 解码、catalog、超时和缓存均参与测试。
+const fixture = Effect.fnUntraced(function* (mode: "ready" | "late" | "missing" | "hang" = "ready") {
+  const state = { mode, calls: 0, signals: [] as AbortSignal[] }
+  const reading = yield* Deferred.make<void>()
+  const http = HttpClient.make((request, url, signal) =>
+    Effect.gen(function* () {
+      const reply = (data: unknown) =>
+        HttpClientResponse.fromWeb(
+          request,
+          Response.json({
+            data,
+            location: { directory: cwd, project: { id: "global", directory: cwd } },
+          }),
+        )
+      if (url.pathname === "/api/plugin")
+        return reply([{ id: "fixture", source: { type: "builtin" }, state: { status: "active" }, features: {} }])
+      state.signals.push(signal)
+      if (state.signals.length === 4) yield* Deferred.succeed(reading, undefined)
+      if (state.mode === "hang") return yield* Effect.callback<never>(() => undefined) // 不监听 abort。
+      if (url.pathname === "/api/model") {
+        state.calls++
+        return reply(
+          state.mode === "missing" || (state.mode === "late" && state.calls < 3) ? [builtin] : [builtin, wanted],
+        )
+      }
+      if (url.pathname === "/api/model/default") return reply(builtin)
+      if (url.pathname === "/api/agent") return reply([Agent.Info.default(Agent.ID.make("build"))])
+      if (url.pathname === "/api/command") return reply([])
+      return yield* Effect.die(new Error(`unexpected readiness request: ${request.method} ${url.pathname}`))
+    }),
+  )
+  const client = yield* OpenCode.make({ baseUrl: "https://readiness.test" }).pipe(
+    Effect.provideService(HttpClient.HttpClient, http),
+  )
+  const catalog = yield* ACPCatalog.make({
+    ...client,
+    event: { ...client.event, subscribe: () => Stream.make(connected).pipe(Stream.concat(Stream.never)) },
+  })
+  return {
+    state,
+    reading: Deferred.await(reading),
+    request: (overrides: Record<string, string | undefined> = {}) =>
+      catalog
+        .get(cwd)
+        .pipe(
+          Effect.provideService(
+            ConfigProvider.ConfigProvider,
+            ConfigProvider.fromUnknown({ ...settings, ...overrides }),
+          ),
+        ),
   }
-  process.env.OPENCODE_ACP_CATALOG_TIMEOUT_MS = "150"
-  delete process.env.OPENCODE_ACP_REQUIRED_MODEL
-  await expect(fixture().request()).rejects.toThrow("explicit")
-  process.env.OPENCODE_ACP_REQUIRED_MODEL = "test/wanted"
-  process.env.OPENCODE_ACP_REQUIRED_VARIANT = "unavailable"
-  const { state, request } = fixture()
-  await expect(request()).rejects.toBeDefined()
-  expect(state.created).toHaveLength(0)
 })
+
+it.effect(
+  "waits past builtin catalog, selects explicit target and variant, caches only readiness",
+  Effect.gen(function* () {
+    const test = yield* fixture("late")
+    const pending = yield* test.request().pipe(Effect.forkScoped)
+    yield* test.reading
+    yield* TestClock.adjust("50 millis")
+    const catalog = yield* Fiber.join(pending)
+    expect(catalog.defaultModel).toEqual(expectedModel)
+    expect(test.state.calls).toBe(3)
+    expect(yield* test.request()).toBe(catalog)
+    expect(test.state.calls).toBe(3)
+  }),
+)
+
+it.effect(
+  "missing target fails at the deadline without fallback; same-cwd failure is evicted",
+  Effect.gen(function* () {
+    const test = yield* fixture("missing")
+    const pending = yield* test.request().pipe(Effect.forkScoped)
+    yield* test.reading
+    yield* TestClock.adjust("149 millis")
+    expect(pending.pollUnsafe()).toBeUndefined()
+    yield* TestClock.adjust("1 milli")
+    expect(yield* Fiber.join(pending).pipe(Effect.flip)).toMatchObject({
+      safeMessage: "ACP catalog readiness deadline exceeded",
+    })
+    test.state.mode = "ready"
+    expect((yield* test.request()).defaultModel).toEqual(expectedModel)
+  }),
+)
+
+it.effect(
+  "all four hanging reads receive abort at the default deadline even if transport ignores it",
+  Effect.gen(function* () {
+    const test = yield* fixture("hang")
+    const pending = yield* test.request({ OPENCODE_ACP_CATALOG_TIMEOUT_MS: undefined }).pipe(Effect.forkScoped)
+    yield* test.reading
+    yield* TestClock.adjust("29999 millis")
+    expect(pending.pollUnsafe()).toBeUndefined()
+    yield* TestClock.adjust("1 milli")
+    expect(yield* Fiber.join(pending).pipe(Effect.flip)).toMatchObject({
+      safeMessage: "ACP catalog readiness deadline exceeded",
+    })
+    expect(test.state.signals).toHaveLength(4)
+    expect(test.state.signals.every((signal) => signal.aborted)).toBe(true)
+  }),
+)
+
+it.effect(
+  "invalid deadline, absent target and unavailable variant fail closed",
+  Effect.gen(function* () {
+    const test = yield* fixture()
+    yield* Effect.forEach(["0", "NaN", "1.5", "120001"], (value) =>
+      test.request({ OPENCODE_ACP_CATALOG_TIMEOUT_MS: value }).pipe(
+        Effect.flip,
+        Effect.tap((error) =>
+          Effect.sync(() => expect(error).toMatchObject({ message: expect.stringContaining("deadline") })),
+        ),
+      ),
+    )
+    expect(yield* test.request({ OPENCODE_ACP_REQUIRED_MODEL: undefined }).pipe(Effect.flip)).toMatchObject({
+      message: "ACP requires an explicit provider/model target",
+    })
+    expect(test.state.calls).toBe(0)
+    expect(yield* test.request({ OPENCODE_ACP_REQUIRED_VARIANT: "unavailable" }).pipe(Effect.flip)).toMatchObject({
+      _tag: "ACPInvalidEffortError",
+      effort: "unavailable",
+    })
+  }),
+)

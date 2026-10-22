@@ -3,6 +3,7 @@ import { Protocol } from "../route/protocol.js"
 import type { LanguageModelCompatibility } from "../schema/index.js"
 import { OpenAIChat } from "./openai-chat.js"
 import { JsonObject, ProviderShared } from "./shared.js"
+import { cacheControl } from "./utils/cache.js"
 import { OpenResponsesOptions } from "./utils/open-responses-options.js"
 
 export type ReasoningEffort = OpenResponsesOptions.ReasoningEffort
@@ -42,7 +43,6 @@ export type OptionsInput = typeof Options.Type
 
 export const compatibility = {
   maxTokensField: "max_completion_tokens",
-  supportsStore: false,
   supportsStrictMode: false,
   reasoningField: "reasoning_content",
   zaiToolStream: false,
@@ -68,7 +68,7 @@ export const protocol = Protocol.make({
     from: Effect.fn("AlibabaChat.fromRequest")(function* (req) {
       const opts = yield* ProviderShared.validateWith(Schema.decodeUnknownEffect(Options))(req.providerOptions ?? {})
       return {
-        ...(yield* OpenAIChat.protocol.body.from(req)),
+        ...(yield* OpenAIChat.fromRequest(req, { cacheControl: cacheControl() })),
         enable_thinking: opts.enableThinking,
         // Alibaba also rejects an explicit budget that is not below `max_completion_tokens`.
         thinking_budget:

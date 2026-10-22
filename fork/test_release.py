@@ -15,14 +15,16 @@ import publish
 
 class ReleaseTests(unittest.TestCase):
     def test_tag_must_match_exact_reviewed_version(self):
-        build.validate_tag('v2.0.19-ricky.1')
-        for tag in ('v2.0.19', 'latest', 'v2.0.19-ricky.0', 'v2.0.19-ricky.01',
-                    'v2.0.19-ricky.2', 'v2.0.19-ricky.1/extra', 'v2.0.19-ricky.1\n'):
+        reviewed = 'v' + build.SPEC['version']
+        upstream = build.SPEC['upstream_tag']
+        build.validate_tag(reviewed)
+        for tag in (upstream, 'latest', upstream + '-ricky.0', upstream + '-ricky.01',
+                    'v0.0.0-ricky.1', reviewed + '/extra', reviewed + '\n'):
             with self.subTest(tag=tag), self.assertRaises(ValueError):
                 build.validate_tag(tag)
 
     def test_repository_event_and_ref_guards_precede_publication(self):
-        base = {'GITHUB_REF_NAME': 'v2.0.19-ricky.1', 'GITHUB_REPOSITORY': 'Ricky-Hao/opencode',
+        base = {'GITHUB_REF_NAME': 'v' + build.SPEC['version'], 'GITHUB_REPOSITORY': 'Ricky-Hao/opencode',
                 'GITHUB_REF_TYPE': 'tag', 'GITHUB_EVENT_NAME': 'push'}
         for override in ({'GITHUB_REPOSITORY': 'anomalyco/opencode'},
                          {'GITHUB_REF_TYPE': 'branch'}, {'GITHUB_EVENT_NAME': 'pull_request'}):
@@ -47,6 +49,12 @@ class ReleaseTests(unittest.TestCase):
                    'GITHUB_REF_TYPE': 'tag', 'GITHUB_EVENT_NAME': 'push', 'GITHUB_SHA': '1' * 40}
             with patch.dict(os.environ, env, clear=True), patch.object(publish, 'git', return_value='1' * 40), \
                     patch.object(sys, 'argv', ['publish.py', temp]):
+                for override in ({'source_dirty': True}, {'source_tag': None}, {'upstream_commit': '0' * 40}):
+                    (assets / 'metadata.json').write_text(json.dumps({**meta, **override}))
+                    with patch.object(publish.subprocess, 'run') as run, self.assertRaises(ValueError):
+                        publish.main()
+                    run.assert_not_called()
+                (assets / 'metadata.json').write_text(json.dumps(meta))
                 for code, status in ((0, 'HTTP/2.0 200 OK'), (1, 'HTTP/2.0 500 Error'), (1, '')):
                     with patch.object(publish.subprocess, 'run', return_value=subprocess.CompletedProcess([], code, status)) as run:
                         with self.assertRaises(ValueError):
@@ -59,6 +67,8 @@ class ReleaseTests(unittest.TestCase):
                     command = run.call_args_list[1].args[0]
                     self.assertEqual(command[:4], ['gh', 'release', 'create', tag])
                     self.assertIn('--verify-tag', command)
+                    self.assertIn('--prerelease', command)
+                    self.assertIn('--latest=false', command)
                     self.assertNotIn('--clobber', command)
                 (assets / name).write_bytes(b'corrupt fixture')
                 with patch.object(publish.subprocess, 'run') as run, self.assertRaises(ValueError):
