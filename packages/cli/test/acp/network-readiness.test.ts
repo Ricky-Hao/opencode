@@ -7,6 +7,7 @@ import { Provider } from "@opencode/schema/provider"
 import { ConfigProvider, Deferred, Effect, Fiber, Schema, Stream } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { TestClock } from "effect/testing"
+import type { SelectedEvent } from "../../../client/src/shared-events"
 import { it } from "../../../core/test/lib/effect"
 import { ACPCatalog } from "../../src/acp/catalog"
 
@@ -64,7 +65,21 @@ const fixture = Effect.fnUntraced(function* (mode: "ready" | "late" | "missing" 
   )
   const catalog = yield* ACPCatalog.make({
     ...client,
-    event: { ...client.event, subscribe: () => Stream.make(connected).pipe(Stream.concat(Stream.never)) },
+    event: {
+      ...client.event,
+      subscribe: <Type extends Exclude<OpenCodeEvent["type"], "server.connected">>(input?: {
+        readonly types?: ReadonlyArray<Type>
+      }) =>
+        Stream.make(connected).pipe(
+          Stream.concat(Stream.never),
+          Stream.filter(
+            (event): event is OpenCodeEvent & SelectedEvent<OpenCodeEvent, Type | "server.connected"> =>
+              event.type === "server.connected" ||
+              !input?.types?.length ||
+              input.types.some((type) => type === event.type),
+          ),
+        ),
+    },
   })
   return {
     state,

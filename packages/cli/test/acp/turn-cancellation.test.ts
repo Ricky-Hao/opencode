@@ -9,6 +9,7 @@ import { Session } from "@opencode/schema/session"
 import { Effect, Fiber, Queue, Ref, type Scheduler, Schema, Stream } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { TestClock } from "effect/testing"
+import type { SelectedEvent } from "../../../client/src/shared-events"
 import { it } from "../../../core/test/lib/effect"
 import { ACPCapabilities } from "../../src/acp/capabilities"
 import type { Catalog } from "../../src/acp/catalog"
@@ -66,7 +67,9 @@ const fixture = Effect.fnUntraced(function* () {
     },
     event: {
       ...base.event,
-      subscribe: () =>
+      subscribe: <Type extends Exclude<OpenCodeEvent["type"], "server.connected">>(input?: {
+        readonly types?: ReadonlyArray<Type>
+      }) =>
         Stream.unwrap(
           Effect.acquireRelease(
             Queue.unbounded<OpenCodeEvent>().pipe(Effect.tap((queue) => Effect.sync(() => subscriptions.add(queue)))),
@@ -84,6 +87,13 @@ const fixture = Effect.fnUntraced(function* () {
                 ),
               ),
             ),
+          ),
+        ).pipe(
+          Stream.filter(
+            (event): event is OpenCodeEvent & SelectedEvent<OpenCodeEvent, Type | "server.connected"> =>
+              event.type === "server.connected" ||
+              !input?.types?.length ||
+              input.types.some((type) => type === event.type),
           ),
         ),
     },

@@ -1,8 +1,9 @@
 # 非官方 OpenCode 维护 fork
 
 `Ricky-Hao/opencode` 的维护分支为 `ricky-opencode2`。本版完整合并上游
-**v2.1.2**（`a517687fde98a7329ada3ae644a01a9fc6c4e99e`），保留维护历史。
-自有版本为 **v2.1.2-ricky.1**。它不是上游官方发行版。
+**v2.2.0**（`1097e2668b1e08ad63bdf0b1c4860b9bc01e420c`），保留维护历史。
+自有候选版本为 **v2.2.0-ricky.1**，本阶段不创建 tag 或 Release。
+它不是上游官方发行版。上游 GitHub `latest` 可能指向仍维护的 v1，不能据此选择 v2。
 MIT [LICENSE](../LICENSE) 保持不变，并随每个发行包提供。
 
 ## 行为与范围
@@ -37,17 +38,18 @@ ACP 必须显式设置 `OPENCODE_ACP_REQUIRED_MODEL=provider/model`。
 ```sh
 bash fork/setup-build-tools.sh /absolute/new/build-tools
 python3 -B fork/build.py --output /absolute/new/build-output \
-  --node /absolute/new/build-tools/node-v22.22.0-linux-x64/bin/node \
+  --node /absolute/new/build-tools/node-v22.23.4-linux-x64/bin/node \
   --bun /absolute/new/build-tools/bun-linux-x64-baseline/bun
 ```
 
-上游仍使用 Bun 1.4.2。本配方继续固定 Node 22.22.0、Bun 1.4.2，
+上游使用 Bun 1.4.4。本配方固定 Node 22.23.4、Bun 1.4.4，
 并校验下载包、`bun.lock` 和 readiness 补丁的 SHA256。
+Node 版本取自官方 Node 22 LTS 维护元数据；Bun 与上游 `packageManager` 一致。
 构建使用独立 HOME、缓存和临时目录，不读取调用者的凭据，不替换现有工具。
 只安装 CLI 的 frozen 依赖，禁用安装脚本，然后运行全部 `packages/cli/test/acp` 回归。
 测试只用隔离合成 fixture/mock，不恢复业务请求。
 
-构建脚本随后以 `--target=opencode-linux-x64-baseline --skip-install --skip-web-ui`
+构建脚本随后以 `OPENCODE_TARGET=linux-x64-baseline` 和 `--skip-install --skip-web-ui`
 编译，并运行编译后程序的 `--version`。`assets/` 包含 tar.gz、独立
 `metadata.json` 和 `SHA256SUMS`。压缩包仅包含 `opencode`、`LICENSE`、`metadata.json`。
 metadata 记录源码 commit、实际 tag（本地构建为 null）、dirty 状态、源码内容摘要、
@@ -60,8 +62,11 @@ metadata 记录源码 commit、实际 tag（本地构建为 null）、dirty 状�
 
 ## 自动化与发布边界
 
-全部 **30** 个继承 workflow 均逐字节归档到 `.github/upstream-workflows/`。
-其中包括本次新增的 `deploy-changelog.yml`、`deploy-update.yml` 和 `models-snapshot.yml`。
+v2.2.0 的全部 **20** 个 workflow 均逐字节归档到 `.github/upstream-workflows/`。
+该目录另保留 **23** 个已退出上游的历史文件，共 **43** 个。
+本次审核了上游重组的 release/sign/publish、nightly、bot/nix 和 triage 自动化：
+它们包含 tag、npm、容器、部署、写权限和自动合并路径，只作为归档保留。
+`.github/release/` 和 `.github/nix-hashes/` 的辅助脚本随上游保留，fork 构建不调用它们。
 归档文件不运行。维护分支仅保留 `.github/workflows/fork.yml` 为 active。
 这不会更改远端默认分支，也不会关闭默认分支上原有的 schedule 或 issue 自动化。
 分支 push 和维护 PR 只测试、构建并上传 CI artifact。

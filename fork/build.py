@@ -52,7 +52,8 @@ def main():
            'XDG_CACHE_HOME': str(out / 'cache'), 'BUN_INSTALL_CACHE_DIR': str(out / 'cache/bun'),
            'PATH': f'{bun.parent}:{node.parent}:/usr/bin:/bin', 'LANG': 'C.UTF-8', 'CI': '1',
            'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_NO_LAZY_FETCH': '1',
-           'OPENCODE_VERSION': SPEC['version'], 'OPENCODE_CHANNEL': 'ricky'}
+            'OPENCODE_VERSION': SPEC['version'], 'OPENCODE_CHANNEL': 'ricky',
+            'OPENCODE_TARGET': SPEC['target'].removeprefix('opencode-')}
 
     def run(argv, cwd=ROOT, capture=False):
         return subprocess.run([str(a) for a in argv], cwd=cwd, env=env, check=True,
@@ -64,8 +65,8 @@ def main():
     assert sha(ROOT / 'bun.lock') == SPEC['lock_sha256']
     cli = ROOT / 'packages/cli'
     run([bun, 'test', '--timeout', '30000', './test/acp'], cwd=cli)
-    run([bun, 'run', 'script/build.ts', '--target=' + SPEC['target'],
-         '--skip-install', '--skip-web-ui', '--outdir=' + str(out / 'compiled')], cwd=cli)
+    run([bun, 'run', 'script/build.ts', '--skip-install', '--skip-web-ui',
+         '--outdir=' + str(out / 'compiled')], cwd=cli)
     binary = out / 'compiled/cli-linux-x64-baseline/bin/opencode'
     version = run([binary, '--version'], cwd=out, capture=True).strip()
     assert version == 'opencode v' + SPEC['version'], version

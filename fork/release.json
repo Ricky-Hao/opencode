@@ -1,12 +1,12 @@
 {
-  "version": "2.1.2-ricky.1",
-  "upstream_commit": "a517687fde98a7329ada3ae644a01a9fc6c4e99e",
-  "upstream_tag": "v2.1.2",
+  "version": "2.2.0-ricky.1",
+  "upstream_commit": "1097e2668b1e08ad63bdf0b1c4860b9bc01e420c",
+  "upstream_tag": "v2.2.0",
   "upstream_repository": "anomalyco/opencode",
   "repository": "Ricky-Hao/opencode",
   "target": "opencode-linux-x64-baseline",
-  "node": "22.22.0",
-  "bun": "1.4.2",
-  "lock_sha256": "b3c986e644b07c996881e1398c28b398736d1f4bb14b898fe9fc66b937a2f29a",
+  "node": "22.23.4",
+  "bun": "1.4.4",
+  "lock_sha256": "e43fa59ca0a6a2c8fe7cce757aec27e1062a2614f1550bb46ff32c72ff487a7a",
   "patch_sha256": "f26078087b8ff41200a6bd9c9bf971b47e07b7bdbc9a05fdc37216f6e15932de"
 }
